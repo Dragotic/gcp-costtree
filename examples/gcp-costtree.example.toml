@@ -1,0 +1,20 @@
+# Copy to ./gcp-costtree.toml (git-ignored) and edit.
+table  = "my-billing-project.billing_export.gcp_billing_export_resource_v1_XXXXXX_XXXXXX_XXXXXX"
+labels = ["env", "project:team"]
+days   = 30
+# end  = "2026-08-25"   # last day of the period; default: today minus lag-days
+
+[rules.nat-processing]
+min_cost = 200
+
+[rules.growth]
+factor = 2.0
+
+[rules.idle-min-instances]
+service  = "(?i)^cloud run$"
+sku      = "(?i)min instance"
+message  = "Idle min instances. Check min-instances settings."
+min_cost = 100
+
+[categories]
+"Managed Service for Apache Kafka" = "Data & Analytics"

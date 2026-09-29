@@ -1,0 +1,34 @@
+service,sku,expect
+Networking,Networking Cloud Nat Data Processing,nat-processing
+Networking,Networking Cloud Nat Gateway Uptime,-
+Networking,Networking Cloud NAT IP Usage,-
+Networking,Networking Private Service Connect Consumer Data Processing,psc-processing
+Networking,Networking Private Service Connect Consumer End Point,-
+Networking,Networking Private Service Connect Partner Select End Point,-
+Cloud Logging,Vended Logs Storage,vended-network-logs
+Cloud Logging,Log Storage cost,logging-ingestion
+Cloud Logging,Log Retention cost,-
+Compute Engine,Static Ip Charge,unused-static-ip
+Compute Engine,External IP Charge on a Standard VM,-
+Compute Engine,N1 Predefined Instance Core running in Americas,legacy-machine-family
+Compute Engine,N1 Predefined Instance Ram running in Americas,legacy-machine-family
+Compute Engine,N2 Instance Core running in Americas,-
+Compute Engine,E2 Instance Core running in Americas,-
+Cloud SQL,Storage PD Snapshot,snapshot-storage
+Compute Engine,Storage PD Snapshot in US,snapshot-storage
+Compute Engine,Multi-regional Snapshot upload within North America,-
+Cloud Run,Cloud Run Network Internet Data Transfer Out North America to North America,internet-egress
+Compute Engine,Network Internet Data Transfer Out from Americas to Americas,internet-egress
+Cloud Build,Cloud Build: Network Data Transfer Out Internet Premium within North America,internet-egress
+Compute Engine,Network Internet Data Transfer In from South America to Americas,-
+Cloud Run,Cloud Run Network Data Transfer Out via Carrier Peering Network - North America Based,-
+Compute Engine,Network Inter Region Data Transfer Out from Americas to Dallas,inter-region-egress
+Cloud Memorystore for Redis,Memorystore for Redis Cluster: Network Data Transfer GCP Inter Region within North America,inter-region-egress
+Cloud Memorystore for Redis,Cloud Memorystore: Networking Traffic Egress GCP Inter Region within Northern America,inter-region-egress
+Cloud Pub/Sub,Inter-region data delivery from North America to North America,inter-region-egress
+Compute Engine,Network Inter Region Data Transfer In from Sao Paulo to Virginia,-
+Compute Engine,Network Inter Zone Data Transfer Out,-
+Cloud SQL,Cloud SQL for PostgreSQL: Regional - Enterprise Plus Extended support vCPU v13 in Iowa,extended-support
+Cloud SQL,Cloud SQL for PostgreSQL: Zonal - Enterprise Plus N vCPU in Iowa,-
+Cloud Run,Services CPU (Instance-based billing) in us-central1,-
+Support,GCP  Support Variable Fee for Enhanced Support,-

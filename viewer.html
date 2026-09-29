@@ -1,0 +1,1443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:">
+<title>gcp-costtree</title>
+<!--
+  Layout and CSS adapted from awstree (https://github.com/petricbranko/awstree), used under the MIT License:
+  Copyright (c) 2026 Branko Petric. Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal in the Software without restriction,
+  including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following
+  conditions: The above copyright notice and this permission notice shall be included in all copies or substantial
+  portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+  INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+  SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+<style>
+:root {
+  /* Google dark surfaces (grey 900 family) and Google/Material hues. */
+  --frame: #111214; --bg: #1b1c1f; --panel: #202124; --line: #3c4043; --raise: #303134; --well: #17181a;
+  --text: #e8eaed; --muted: #9aa0a6; --dim: #8a8f94; --accent: #8ab4f8; --neutral: #5f6368; --warn: #fdd663;
+  --up: #f28b82; --down: #81c995; --sel: #e8eaed; --hatch: rgba(255, 255, 255, .06); --tip: #2d2e31;
+  --g-blue: #4285f4; --g-red: #ea4335; --g-yellow: #fbbc04; --g-green: #34a853;
+  --compute: #4285f4; --storage: #fbbc04; --network: #34a853; --databases: #ea4335;
+  --data: #a142f4; --ops: #24c1e0; --tax: #9aa0a6; --other: #5f6368;
+  --leaf-mix: 30%; --leaf-border: 50%; --leaf-hover: 36%; --group-mix: 9%; --leaf-v: 8%; --chg-hover: 3%;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --frame: #e8eaed; --bg: #f8f9fa; --panel: #ffffff; --line: #dadce0; --raise: #f1f3f4; --well: #ffffff;
+    --text: #202124; --muted: #5f6368; --dim: #6b7075; --accent: #1967d2; --neutral: #bdc1c6; --warn: #a35700;
+    --up: #d93025; --down: #188038; --sel: #202124; --hatch: rgba(0, 0, 0, .05); --tip: #ffffff;
+    --compute: #1a73e8; --storage: #f9ab00; --network: #1e8e3e; --databases: #d93025;
+    --data: #9334e6; --ops: #12b5cb; --tax: #80868b; --other: #9aa0a6;
+    --leaf-mix: 22%; --leaf-border: 45%; --leaf-hover: 32%; --group-mix: 6%; --leaf-v: 20%; --chg-hover: 6%;
+    color-scheme: light;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--frame); color: var(--text);
+  font: 12px/1.35 "Google Sans Text", "Google Sans", Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums; overflow: hidden; }
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#map:focus, #map:focus-visible { outline: none; }
+#map:not(:focus) .cell.sel { outline-style: dashed; outline-color: var(--muted); }
+#map:focus .empty { outline: 2px solid var(--accent); outline-offset: -8px; border-radius: 8px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.app { position: fixed; inset: 10px; display: grid; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; overflow: hidden;
+  grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+
+header { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 9px 14px;
+  border-bottom: 1px solid var(--line); min-width: 0; }
+.logo { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; letter-spacing: .1px; white-space: nowrap; }
+.logo .name span { color: var(--muted); font-weight: 400; }
+.logo i { display: grid; grid-template-columns: 7px 7px; gap: 2px; }
+.logo i b { width: 7px; height: 7px; border-radius: 1px; display: block; }
+#crumbs { color: var(--dim); display: flex; gap: 6px; align-items: center; min-width: 80px; flex: 1 1 120px; overflow: hidden; white-space: nowrap; }
+#crumbs button { background: none; border: 0; padding: 2px 2px; color: var(--muted); cursor: pointer; }
+#crumbs button:hover { color: var(--text); }
+#crumbs .cur { color: var(--text); background: var(--raise); padding: 2px 7px; border-radius: 4px; }
+.spacer { display: none; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 6px; padding: 2px; gap: 2px; flex: 0 1 auto; min-width: 0; overflow-x: auto; }
+.seg button { background: none; border: 0; color: var(--muted); padding: 4px 10px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+.seg button[aria-pressed="true"] { background: var(--raise); color: var(--text); font-weight: 500; box-shadow: inset 0 0 0 1px var(--line); }
+.seg button:hover { color: var(--text); }
+label.chk { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+label.chk input { accent-color: var(--accent); margin: 0; }
+label.chk.off { opacity: .5; cursor: not-allowed; }
+.btn { background: none; border: 1px solid var(--line); color: var(--muted); padding: 5px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--text) 25%, var(--line)); }
+#filter { background: var(--well); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 5px 9px;
+  border-radius: 6px; width: 170px; }
+#filter:focus { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
+
+.sub { grid-column: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 8px 14px 6px; color: var(--muted); min-width: 0; }
+.sub b { color: var(--text); font-weight: 600; }
+.chip { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 4px; padding: 0 6px; white-space: nowrap; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-left: auto; }
+.legend span { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.legend i { width: 9px; height: 9px; border-radius: 2px; display: block; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--muted)) 60%, var(--text)); }
+.legend i.hatch { background: repeating-linear-gradient(45deg, var(--raise) 0 2px, var(--muted) 2px 3px); }
+.notes { flex-basis: 100%; color: var(--warn); font-size: 11.5px; }
+.notes:empty { display: none; }
+
+#map { grid-column: 1; position: relative; margin: 2px 8px 8px 12px; min-height: 0; overflow: hidden; border-radius: 4px; }
+#stage { position: absolute; inset: 0; transform-origin: 0 0; }
+.cell { position: absolute; overflow: hidden; border-radius: 2px; cursor: pointer; }
+.leaf { background-color: color-mix(in srgb, var(--c) var(--leaf-mix), var(--bg)); border: 1px solid color-mix(in srgb, var(--c) var(--leaf-border), var(--bg)); padding: 3px 5px; }
+.leaf:hover { background-color: color-mix(in srgb, var(--c) var(--leaf-hover), var(--bg)); }
+.group { background: color-mix(in srgb, var(--c) var(--group-mix), var(--bg)); border: 1px solid color-mix(in srgb, var(--c) 30%, var(--bg));
+  border-top: 2px solid color-mix(in srgb, var(--c) 75%, var(--bg)); }
+.gh { display: flex; justify-content: space-between; gap: 6px; padding: 1px 5px; height: 17px; white-space: nowrap; }
+.gh .n { overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.gh .v { color: var(--muted); font-size: 10.5px; }
+.leaf .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.leaf.chg { background-color: color-mix(in srgb, var(--c) var(--chg), var(--bg)); border-color: color-mix(in srgb, var(--c) calc(var(--chg) + 15%), var(--bg)); }
+.leaf.chg:hover { background-color: color-mix(in srgb, var(--c) calc(var(--chg) + var(--chg-hover)), var(--bg)); }
+.leaf .v { color: color-mix(in srgb, var(--c) var(--leaf-v), var(--text)); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell.flagged { background-image: repeating-linear-gradient(45deg, transparent 0 5px, var(--hatch) 5px 6px); }
+.cell.marked::after { content: ""; position: absolute; inset: 0; border: 2px dashed var(--up); border-radius: 2px; pointer-events: none; }
+.cell.sel { outline: 2px solid var(--sel); outline-offset: -2px; z-index: 2; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; text-align: center; padding: 24px; }
+
+aside { grid-column: 2; grid-row: 2 / 4; border-left: 1px solid var(--line); background: var(--panel);
+  padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+.h { color: var(--dim); font-size: 10.5px; letter-spacing: .8px; text-transform: uppercase; display: flex; justify-content: space-between; }
+.h b { color: var(--accent); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.h button { background: none; border: 0; color: var(--accent); padding: 0; cursor: pointer; font: inherit; letter-spacing: 0; text-transform: none; }
+.sel-name { font-size: 16px; border-left: 2px solid var(--accent); padding-left: 8px; margin-top: 8px; word-break: break-word; }
+.sel-path { color: var(--dim); margin: 3px 0 0 10px; word-break: break-word; }
+.big { font-size: 34px; font-weight: 300; margin-top: 10px; letter-spacing: -.5px; white-space: nowrap; }
+.big small { font-size: 14px; color: var(--muted); margin-left: 2px; }
+.period { color: var(--muted); margin-top: 2px; }
+.bar { height: 4px; background: var(--raise); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 10px; margin-top: 14px; }
+.stats div { font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+.stats .lbl { display: block; color: var(--dim); font-size: 10px; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 2px; }
+.upc { color: var(--up); } .downc { color: var(--down); } .mut { color: var(--muted); }
+.spark { margin-top: 14px; }
+.spark svg { display: block; width: 100%; height: 46px; }
+.spark .axis { display: flex; justify-content: space-between; color: var(--dim); font-size: 10px; margin-top: 3px; }
+.usage { color: var(--muted); margin-top: 10px; }
+.hint { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; border-left: 2px solid var(--c, var(--accent));
+  padding: 2px 0 2px 9px; margin-top: 11px; background: none; border-top: 0; border-right: 0; border-bottom: 0;
+  color: inherit; text-align: left; width: 100%; cursor: pointer; }
+.hint:hover .hn { color: var(--text); filter: brightness(1.2); }
+.hn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hv { text-align: right; }
+.hs { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb { height: 3px; background: var(--raise); border-radius: 2px; align-self: center; width: 80px; overflow: hidden; }
+.hb i { display: block; height: 100%; background: var(--c, var(--accent)); opacity: .85; }
+.msg { border-left: 2px solid var(--accent); padding: 2px 0 2px 9px; margin-top: 10px; color: var(--muted); }
+.review .big { font-size: 22px; }
+.bill { margin-top: auto; border-top: 1px solid var(--line); padding-top: 14px; }
+.bill .big { font-size: 26px; margin-top: 6px; }
+.bill-row { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); margin-top: 5px; }
+.bill-row b { color: var(--text); font-weight: 400; text-align: right; overflow-wrap: anywhere; }
+
+footer { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 7px 14px; border-top: 1px solid var(--line);
+  color: var(--dim); white-space: nowrap; }
+footer .keys { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; }
+footer .meta { margin-left: auto; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+kbd { font: 10.5px ui-monospace, Menlo, monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; margin-right: 4px; }
+.badge { color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 4px; padding: 0 6px; }
+
+#tip { position: fixed; pointer-events: none; background: var(--tip); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
+  z-index: 10; max-width: 320px; box-shadow: 0 6px 24px rgba(0, 0, 0, .35); }
+#tip[hidden] { display: none; }
+#tip .t1 { word-break: break-word; }
+#tip .t2 { color: var(--muted); margin-top: 3px; }
+
+#overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 20; }
+#overlay[hidden] { display: none; }
+#overlayBox { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; max-width: 760px; width: 100%;
+  max-height: 80vh; overflow: auto; padding: 16px 18px; box-shadow: 0 12px 48px rgba(0, 0, 0, .45); }
+#overlayBox h2 { font-size: 13px; font-weight: 600; margin: 0 0 12px; }
+#overlayBox table { border-collapse: collapse; width: 100%; }
+#overlayBox td, #overlayBox th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+#overlayBox th { color: var(--dim); font-weight: 500; font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase; }
+#overlayBox textarea { width: 100%; min-height: 160px; font: 12px ui-monospace, Menlo, monospace; background: var(--well); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+#overlayBox .row { display: flex; gap: 8px; margin-top: 12px; }
+#toast { position: fixed; bottom: 48px; left: 50%; transform: translateX(-50%); background: var(--tip); color: var(--text); border: 1px solid var(--line);
+  padding: 7px 12px; border-radius: 6px; max-width: calc(100% - 32px); z-index: 30; box-shadow: 0 6px 24px rgba(0, 0, 0, .35); }
+#toast:empty { display: none; }
+
+@media (max-width: 900px) {
+  html, body { overflow: auto; }
+  .app { position: static; margin: 8px; grid-template-columns: 1fr; grid-template-rows: auto auto 60vh auto auto; }
+  header { flex-wrap: wrap; } .legend { display: none; } #filter { width: 100%; } .spacer { display: none; }
+  .sub { grid-column: 1; } #map { grid-column: 1; grid-row: 3; margin: 2px 8px 8px; }
+  aside { grid-column: 1; grid-row: 4; border-left: 0; border-top: 1px solid var(--line); }
+  footer { grid-row: 5; } footer .keys { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo"><i aria-hidden="true"><b style="background:var(--g-blue)"></b><b style="background:var(--g-red)"></b><b style="background:var(--g-yellow)"></b><b style="background:var(--g-green)"></b></i><span class="name">gcp<span>-costtree</span></span></div>
+    <nav id="crumbs" aria-label="Breadcrumb"></nav>
+    <div class="spacer"></div>
+    <div class="seg" id="groupSeg" role="group" aria-label="Group by"></div>
+    <div class="seg" id="metricSeg" role="group" aria-label="Metric"></div>
+    <label class="chk" id="colorChk"><input type="checkbox" id="colorBox"> Color by change</label>
+    <button class="btn" id="exportBtn" type="button">Export for AI</button>
+    <input id="filter" type="search" placeholder="filter  /" aria-label="Filter by name" autocomplete="off">
+  </header>
+  <div class="sub" id="sub"></div>
+  <div id="map" tabindex="0" role="application" aria-label="Cost treemap. Arrow keys move, Enter opens, Backspace goes up, question mark lists keys."><div id="stage"></div></div>
+  <aside id="panel"></aside>
+  <div id="live" class="sr-only" aria-live="polite"></div>
+  <footer id="foot"></footer>
+</div>
+<div id="tip" hidden></div>
+<div id="overlay" hidden><div id="overlayBox" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"></div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="application/json" id="data">__COSTTREE_DATA__</script>
+<script id="lib">
+var CT = (function () {
+  "use strict";
+  var OTHER = "(other)";
+  var FACT_DIMS = ["service", "sku", "project", "region"];
+
+  function buildModel(data) {
+    var cols = data.daily_columns, rows = data.daily, n = rows.length;
+    var dayCol = cols.indexOf("day");
+    var dimNames = cols.slice(0, dayCol);
+    var dims = {};
+    dimNames.forEach(function (d) { dims[d] = new Int32Array(n); });
+    var seen = {}, dayList = [], rawDay = new Int32Array(n);
+    var cost = new Float64Array(n), credits = new Float64Array(n), list = new Float64Array(n);
+    var usage = new Float64Array(n), cur = new Uint8Array(n);
+    var periodStart = data.meta.period[0];
+    for (var i = 0; i < n; i++) {
+      var r = rows[i];
+      for (var j = 0; j < dayCol; j++) dims[dimNames[j]][i] = r[j];
+      var d = r[dayCol], k = seen[d];
+      if (k === undefined) { k = seen[d] = dayList.length; dayList.push(d); }
+      rawDay[i] = k;
+      cur[i] = d >= periodStart ? 1 : 0;
+      cost[i] = r[dayCol + 1]; credits[i] = r[dayCol + 2]; list[i] = r[dayCol + 3]; usage[i] = r[dayCol + 4];
+    }
+    // Full UTC calendar from prior start to period end, so gaps show as zero days in sparklines.
+    var days = [];
+    var d0 = Date.parse(data.meta.prior[0] + "T00:00:00Z"), d1 = Date.parse(data.meta.period[1] + "T00:00:00Z");
+    for (var ts = d0; ts <= d1; ts += 86400000) days.push(new Date(ts).toISOString().slice(0, 10));
+    dayList.forEach(function (x) { if (days.indexOf(x) < 0) days.push(x); });
+    days.sort();
+    var pos = {};
+    days.forEach(function (x, idx) { pos[x] = idx; });
+    var remap = dayList.map(function (x) { return pos[x]; });
+    var day = new Int32Array(n);
+    for (i = 0; i < n; i++) day[i] = remap[rawDay[i]];
+    var keyIndex = {};
+    Object.keys(data.dims).forEach(function (name) {
+      var mp = new Map();
+      data.dims[name].forEach(function (v, idx) { mp.set(Array.isArray(v) ? v[0] : v, idx); });
+      keyIndex[name] = mp;
+    });
+    var m = { data: data, meta: data.meta, n: n, dims: dims, dimNames: dimNames, day: day, days: days, cur: cur,
+      cost: cost, credits: credits, list: list, usage: usage, keyIndex: keyIndex, res: null, hasResources: false };
+    var rs = data.resources || [];
+    if (data.meta.export === "detailed" && rs.length) {
+      var rn = rs.length;
+      var res = { n: rn, service: new Int32Array(rn), sku: new Int32Array(rn), project: new Int32Array(rn),
+        region: new Int32Array(rn), name: new Array(rn), vals: new Float64Array(rn * 6), index: new Map() };
+      rs.forEach(function (r, k) {
+        res.service[k] = r[0]; res.sku[k] = r[1]; res.project[k] = r[2]; res.region[k] = r[3]; res.name[k] = r[4];
+        for (var j = 0; j < 6; j++) res.vals[k * 6 + j] = r[5 + j];
+      });
+      m.res = res;
+      m.hasResources = true;
+      for (var k = 0; k < rn; k++) {
+        res.index.set(resKey(dimKey(m, "service", res.service[k]), dimKey(m, "sku", res.sku[k]),
+          dimKey(m, "project", res.project[k]), dimKey(m, "region", res.region[k]), res.name[k]), k);
+      }
+    }
+    return m;
+  }
+
+  function resKey(a, b, c, d, e) { return JSON.stringify([a, b, c, d, e]); }
+  function dimLabel(m, dim, idx) { var v = m.data.dims[dim][idx]; return Array.isArray(v) ? v[1] : v; }
+  function dimKey(m, dim, idx) { var v = m.data.dims[dim][idx]; return Array.isArray(v) ? v[0] : v; }
+  function rowValue(m, i, metric) {
+    return metric === "net" ? m.cost[i] + m.credits[i] : metric === "cost" ? m.cost[i] : m.list[i];
+  }
+  function resValue(m, k, metric, prior) {
+    var v = m.res.vals, o = k * 6 + (prior ? 3 : 0);
+    return metric === "net" ? v[o] + v[o + 1] : metric === "cost" ? v[o] : v[o + 2];
+  }
+  function levels(m, grouping) {
+    var dims = grouping === "service" ? ["service", "sku"] : [grouping, "service", "sku"];
+    return { dims: dims, resources: m.hasResources && grouping.indexOf("label:") !== 0 };
+  }
+  function newNode(label, key, dim, filter, parent) {
+    return { label: String(label), key: String(key), dim: dim, filter: filter, cur: 0, prior: 0, weight: 0,
+      children: [], kids: new Map(), synthetic: parent ? parent.synthetic : false, isResource: false,
+      tuple: null, parent: parent || null, resChildren: null };
+  }
+  function shortName(name) {
+    if (name === OTHER || name.indexOf("/") < 0) return name;
+    var parts = name.split("/").filter(Boolean);
+    return parts[parts.length - 1] || name;
+  }
+
+  function buildTree(m, grouping, metric, text) {
+    var lv = levels(m, grouping);
+    var needle = (text || "").trim().toLowerCase();
+    var root = newNode("All", "", null, {}, null);
+    var lower = {};
+    function low(dim, idx) {
+      var c = lower[dim] || (lower[dim] = []);
+      var s = c[idx];
+      if (s === undefined) s = c[idx] = String(dimLabel(m, dim, idx)).toLowerCase();
+      return s;
+    }
+    var path = lv.dims, depth = path.length;
+    var cols = path.map(function (d) { return m.dims[d]; });
+    // The name filter matches any name on the row (service, SKU, project, region, label values), not only the
+    // current path, and a resource name keeps its whole (service, SKU, project, region) key.
+    var searchDims = m.dimNames.filter(function (d) { return d !== "unit" && d !== "cost_type"; });
+    var searchCols = searchDims.map(function (d) { return m.dims[d]; });
+    var resKeys = null;
+    if (needle && m.res) {
+      resKeys = new Set();
+      for (var k = 0; k < m.res.n; k++) {
+        if (String(m.res.name[k]).toLowerCase().indexOf(needle) >= 0) {
+          resKeys.add(m.res.service[k] + "|" + m.res.sku[k] + "|" + m.res.project[k] + "|" + m.res.region[k]);
+        }
+      }
+    }
+    // Resources carry no labels: only rows matched by a non-label name (or a resource name) let their
+    // (service, SKU, project, region) resources in, so resource boxes never show amounts the filter excluded.
+    var resAllowed = needle ? new Set() : null;
+    for (var i = 0; i < m.n; i++) {
+      if (needle) {
+        var plainHit = false, labelHit = false;
+        for (var a = 0; a < searchDims.length && !plainHit; a++) {
+          if (low(searchDims[a], searchCols[a][i]).indexOf(needle) < 0) continue;
+          if (isLabelDim(searchDims[a])) labelHit = true; else plainHit = true;
+        }
+        var rowKey = m.dims.service[i] + "|" + m.dims.sku[i] + "|" + m.dims.project[i] + "|" + m.dims.region[i];
+        if (!plainHit && resKeys && resKeys.has(rowKey)) plainHit = true;
+        if (!plainHit && !labelHit) continue;
+        if (plainHit) resAllowed.add(rowKey);
+      }
+      var v = rowValue(m, i, metric), isCur = m.cur[i] === 1;
+      var nd = root;
+      if (isCur) nd.cur += v; else nd.prior += v;
+      for (var L = 0; L < depth; L++) {
+        var idx = cols[L][i];
+        var ch = nd.kids.get(idx);
+        if (!ch) {
+          var dim = path[L], f = {};
+          for (var key in nd.filter) f[key] = nd.filter[key];
+          f[dim] = idx;
+          ch = newNode(dimLabel(m, dim, idx), dimKey(m, dim, idx), dim, f, nd);
+          if (dim.indexOf("label:") === 0 && m.data.dims[dim][idx] === OTHER) ch.synthetic = true;
+          nd.kids.set(idx, ch);
+          nd.children.push(ch);
+        }
+        nd = ch;
+        if (isCur) nd.cur += v; else nd.prior += v;
+      }
+    }
+    if (lv.resources) attachResources(m, root, path, metric, resAllowed);
+    finish(root);
+    return root;
+  }
+
+  function attachResources(m, root, path, metric, allowed) {
+    var r = m.res;
+    for (var k = 0; k < r.n; k++) {
+      var nd = root;
+      for (var L = 0; L < path.length && nd; L++) nd = nd.kids.get(r[path[L]][k]);
+      if (!nd) continue;
+      if (allowed && !allowed.has(r.service[k] + "|" + r.sku[k] + "|" + r.project[k] + "|" + r.region[k])) continue;
+      var name = r.name[k];
+      var tuple = { service: dimKey(m, "service", r.service[k]), sku: dimKey(m, "sku", r.sku[k]),
+        project: dimKey(m, "project", r.project[k]), region: dimKey(m, "region", r.region[k]), name: name };
+      var id = resKey(tuple.service, tuple.sku, tuple.project, tuple.region, name);
+      var ch = nd.kids.get("r:" + id);
+      if (!ch) {
+        var f = {};
+        for (var key in nd.filter) f[key] = nd.filter[key];
+        f.resource = name;
+        var label = shortName(name);
+        if (path.indexOf("project") < 0) label += " · " + tuple.project;
+        if (path.indexOf("region") < 0) label += " · " + tuple.region;
+        ch = newNode(label, id, "resource", f, nd);
+        ch.isResource = true;
+        ch.synthetic = name === OTHER;
+        ch.tuple = tuple;
+        nd.kids.set("r:" + id, ch);
+        (nd.resChildren || (nd.resChildren = [])).push(ch);
+      }
+      ch.cur += resValue(m, k, metric, false);
+      ch.prior += resValue(m, k, metric, true);
+    }
+  }
+
+  function finish(nd) {
+    if (nd.resChildren) {
+      // A resource level must add up to its SKU; when a filter makes that impossible, the SKU stays a leaf.
+      // Both periods must match (the resource level feeds deltas too). Absolute cent tolerance, or a relative
+      // one for very large SKUs where float drift exceeds a cent.
+      var sum = 0, sumPrior = 0;
+      nd.resChildren.forEach(function (c) { sum += c.cur; sumPrior += c.prior; });
+      var close = function (a, b) { return Math.abs(a - b) < Math.max(0.005, 1e-9 * Math.abs(b)); };
+      if (close(sum, nd.cur) && close(sumPrior, nd.prior)) nd.children = nd.resChildren;
+    }
+    if (!nd.children.length) { nd.weight = Math.max(nd.cur, 0); return; }
+    var w = 0;
+    for (var i = 0; i < nd.children.length; i++) { finish(nd.children[i]); w += nd.children[i].weight; }
+    nd.weight = w;
+    nd.children.sort(function (a, b) {
+      return b.weight - a.weight || b.cur - a.cur || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0);
+    });
+  }
+
+  function matches(m, i, filter) {
+    for (var d in filter) {
+      if (d === "resource") continue;
+      if (m.dims[d][i] !== filter[d]) return false;
+    }
+    return true;
+  }
+  function series(m, filter, metric) {
+    var out = new Array(m.days.length).fill(0);
+    for (var i = 0; i < m.n; i++) if (matches(m, i, filter)) out[m.day[i]] += rowValue(m, i, metric);
+    return out;
+  }
+  function usageByUnit(m, filter) {
+    var out = {};
+    for (var i = 0; i < m.n; i++) {
+      if (!m.cur[i] || !matches(m, i, filter)) continue;
+      var u = dimLabel(m, "unit", m.dims.unit[i]) || "units";
+      out[u] = (out[u] || 0) + m.usage[i];
+    }
+    return out;
+  }
+
+  function worst(row, side) {
+    var s = 0, mx = 0, mn = Infinity;
+    for (var i = 0; i < row.length; i++) { s += row[i].area; mx = Math.max(mx, row[i].area); mn = Math.min(mn, row[i].area); }
+    var s2 = s * s, side2 = side * side;
+    return Math.max(side2 * mx / s2, s2 / (side2 * mn));
+  }
+  function layoutRow(row, box, out) {
+    var s = 0;
+    for (var i = 0; i < row.length; i++) s += row[i].area;
+    if (box.w >= box.h) {
+      var cw = s / box.h, cy = box.y;
+      row.forEach(function (r) { var rh = r.area / cw; out.push({ item: r.item, x: box.x, y: cy, w: cw, h: rh }); cy += rh; });
+      return { x: box.x + cw, y: box.y, w: box.w - cw, h: box.h };
+    }
+    var rh2 = s / box.w, cx = box.x;
+    row.forEach(function (r) { var rw = r.area / rh2; out.push({ item: r.item, x: cx, y: box.y, w: rw, h: rh2 }); cx += rw; });
+    return { x: box.x, y: box.y + rh2, w: box.w, h: box.h - rh2 };
+  }
+  function squarify(nodes, x, y, w, h) {
+    var out = [];
+    var items = nodes.filter(function (n) { return n.weight > 0; });
+    var total = items.reduce(function (s, n) { return s + n.weight; }, 0);
+    if (total <= 0 || w <= 0 || h <= 0) return out;
+    var scale = (w * h) / total;
+    var rest = items.map(function (n) { return { item: n, area: n.weight * scale }; });
+    var box = { x: x, y: y, w: w, h: h }, row = [];
+    while (rest.length) {
+      var side = Math.min(box.w, box.h);
+      if (!row.length || worst(row.concat([rest[0]]), side) <= worst(row, side)) row.push(rest.shift());
+      else { box = layoutRow(row, box, out); row = []; }
+    }
+    if (row.length) layoutRow(row, box, out);
+    return out;
+  }
+
+  function tooSmall(r, minSize) { return minSize && (r.w < minSize || r.h < minSize); }
+  // minSize: rects smaller than this are not drawn, so keyboard navigation skips them.
+  function neighbor(rects, current, dir, minSize) {
+    var c = rects[current];
+    if (!c) return rects.length ? 0 : -1;
+    var cx = c.x + c.w / 2, cy = c.y + c.h / 2, best = current, bestD = Infinity;
+    rects.forEach(function (r, i) {
+      if (i === current || tooSmall(r, minSize)) return;
+      var rx = r.x + r.w / 2, ry = r.y + r.h / 2, d;
+      if (dir === "right") { if (r.x < c.x + c.w - 0.5) return; d = r.x - (c.x + c.w) + Math.abs(ry - cy) * 0.5; }
+      else if (dir === "left") { if (r.x + r.w > c.x + 0.5) return; d = c.x - (r.x + r.w) + Math.abs(ry - cy) * 0.5; }
+      else if (dir === "down") { if (r.y < c.y + c.h - 0.5) return; d = r.y - (c.y + c.h) + Math.abs(rx - cx) * 0.5; }
+      else { if (r.y + r.h > c.y + 0.5) return; d = c.y - (r.y + r.h) + Math.abs(rx - cx) * 0.5; }
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    return best;
+  }
+
+  function nextVisible(rects, current, step, minSize) {
+    var n = rects.length;
+    for (var i = 1; i <= n; i++) {
+      var j = ((current + step * i) % n + n) % n;
+      if (!tooSmall(rects[j], minSize)) return j;
+    }
+    return current;
+  }
+  // Truncate by characters (code points), never inside a surrogate pair.
+  function cutChars(s, n) { var a = Array.from(String(s)); return a.length <= n ? String(s) : a.slice(0, n).join(""); }
+
+  function isLabelDim(d) { return d.indexOf("label:") === 0; }
+  function labelConstrained(f) { return Object.keys(f).some(isLabelDim); }
+  function compatible(f, t) { return FACT_DIMS.every(function (d) { return !(d in f) || f[d] === t[d]; }); }
+  function markFromNode(m, nd, text) {
+    if (!nd || !nd.parent) return { error: "Select a box first." };
+    if (text && String(text).trim()) return { error: "Clear the name filter to mark: a filtered box shows only part of what the mark would include." };
+    if (nd.synthetic) return { error: "“(other)” buckets can't be marked: what they contain changes between runs." };
+    if (nd.isResource) {
+      var r = { kind: "resource", resource: nd.tuple };
+      r.id = markId(r);
+      return r;
+    }
+    var f = {};
+    Object.keys(nd.filter).forEach(function (d) { f[d] = dimKey(m, d, nd.filter[d]); });
+    var mk = { kind: "fact", filter: f };
+    mk.id = markId(mk);
+    return mk;
+  }
+  function markId(mk) {
+    if (mk.kind === "resource") {
+      var t = mk.resource;
+      return "r" + JSON.stringify([t.service, t.sku, t.project, t.region, t.name]);
+    }
+    return "f" + JSON.stringify(Object.keys(mk.filter).sort().map(function (k) { return [k, mk.filter[k]]; }));
+  }
+  // True when some daily row matches the label-constrained filter AND the resource's (service, sku, project, region).
+  function labelOverlap(m, filter, t) {
+    if (!compatible(filter, t)) return false;
+    var f = resolveFilter(m, filter);
+    var key = resolveFilter(m, { service: t.service, sku: t.sku, project: t.project, region: t.region });
+    if (!f || !key) return false;
+    for (var d in key) f[d] = key[d];
+    for (var i = 0; i < m.n; i++) if (matches(m, i, f)) return true;
+    return false;
+  }
+  function markConflict(m, marks, mk) {
+    var clash = mk.kind === "resource"
+      ? marks.some(function (x) { return x.kind === "fact" && labelConstrained(x.filter) && labelOverlap(m, x.filter, mk.resource); })
+      : labelConstrained(mk.filter) && marks.some(function (x) { return x.kind === "resource" && labelOverlap(m, mk.filter, x.resource); });
+    return clash ? "A label mark and a resource mark can't overlap: resources carry no label data, so the overlap can't be measured." : null;
+  }
+  // Marks read back from storage: shape-checked, canonical ids, no synthetic buckets, no duplicates, no conflicts.
+  function normalizeMarks(m, list) {
+    var out = [], seen = {};
+    (Array.isArray(list) ? list : []).forEach(function (x) {
+      if (!validMark(x)) return;
+      var mk = x.kind === "resource"
+        ? { kind: "resource", resource: { service: x.resource.service, sku: x.resource.sku, project: x.resource.project,
+            region: x.resource.region, name: x.resource.name }, label: x.label }
+        : { kind: "fact", filter: Object.assign({}, x.filter), label: x.label };
+      mk.id = markId(mk);
+      var synthetic = mk.kind === "resource" ? mk.resource.name === OTHER
+        : Object.keys(mk.filter).some(function (k) { return isLabelDim(k) && mk.filter[k] === OTHER; });
+      if (synthetic || seen[mk.id] || markConflict(m, out, mk)) return;
+      seen[mk.id] = true;
+      out.push(mk);
+    });
+    return out;
+  }
+  function resolveFilter(m, f) {
+    var out = {};
+    for (var d in f) {
+      var mp = m.keyIndex[d];
+      if (!mp || !mp.has(f[d])) return null;
+      out[d] = mp.get(f[d]);
+    }
+    return out;
+  }
+  function resIndexOf(m, t) {
+    return m.res ? m.res.index.get(resKey(t.service, t.sku, t.project, t.region, t.name)) : undefined;
+  }
+  function markAmount(m, mk, metric, prior) {
+    if (mk.kind === "resource") {
+      var k = resIndexOf(m, mk.resource);
+      return k === undefined ? null : resValue(m, k, metric, !!prior);
+    }
+    var f = resolveFilter(m, mk.filter);
+    if (!f) return null;
+    var s = 0;
+    for (var i = 0; i < m.n; i++) if ((prior ? !m.cur[i] : m.cur[i]) && matches(m, i, f)) s += rowValue(m, i, metric);
+    return s;
+  }
+  function unionTotal(m, marks, metric) {
+    var live = [], filters = [], stale = [];
+    marks.forEach(function (mk) {
+      if (mk.kind !== "fact") return;
+      var f = resolveFilter(m, mk.filter);
+      if (f) { live.push(mk); filters.push(f); } else stale.push(mk.id);
+    });
+    var total = 0, hit = filters.map(function () { return false; });
+    for (var i = 0; i < m.n; i++) {
+      var counted = false;
+      for (var a = 0; a < filters.length; a++) {
+        if (!matches(m, i, filters[a])) continue;
+        hit[a] = true;
+        if (m.cur[i] && !counted) { total += rowValue(m, i, metric); counted = true; }
+      }
+    }
+    live = live.filter(function (mk, a) { if (!hit[a]) stale.push(mk.id); return hit[a]; });
+    marks.forEach(function (mk) {
+      if (mk.kind !== "resource") return;
+      var k = resIndexOf(m, mk.resource);
+      if (k === undefined) { stale.push(mk.id); return; }
+      var covered = live.some(function (x) { return !labelConstrained(x.filter) && compatible(x.filter, mk.resource); });
+      if (!covered) total += resValue(m, k, metric, false);
+    });
+    return { total: total, stale: stale };
+  }
+
+  function validMark(x) {
+    if (!x || typeof x.id !== "string" || typeof x.label !== "string") return false;
+    if (x.kind === "fact") {
+      var f = x.filter;
+      return !!f && typeof f === "object" && !Array.isArray(f) && Object.keys(f).length > 0 &&
+        Object.keys(f).every(function (k) { return typeof f[k] === "string"; });
+    }
+    if (x.kind === "resource") {
+      var t = x.resource;
+      return !!t && typeof t === "object" &&
+        ["service", "sku", "project", "region", "name"].every(function (k) { return typeof t[k] === "string"; });
+    }
+    return false;
+  }
+
+  // Distinct (service, sku) index pairs among rows matching a mark, for flag lookups on broad marks.
+  function skusMatching(m, mk) {
+    var out = new Set();
+    if (mk.kind === "resource") {
+      var s = m.keyIndex.service.get(mk.resource.service), k = m.keyIndex.sku.get(mk.resource.sku);
+      if (s !== undefined && k !== undefined) out.add(s + "|" + k);
+      return out;
+    }
+    var f = resolveFilter(m, mk.filter);
+    if (!f) return out;
+    for (var i = 0; i < m.n; i++) if (matches(m, i, f)) out.add(m.dims.service[i] + "|" + m.dims.sku[i]);
+    return out;
+  }
+
+  function storageKey(meta) { return "gcp-costtree:v1:" + meta.table_hash + ":" + meta.export + ":" + meta.labels.join(","); }
+  function mdEscape(s) { return String(s).replace(/[\\|`]/g, "\\$&"); }
+  var fmtCache = {};
+  function formatMoney(v, currency) {
+    var big = Math.abs(v) >= 100, key = (currency || "USD") + big;
+    var f = fmtCache[key] || (fmtCache[key] = new Intl.NumberFormat("en-US", { style: "currency",
+      currency: currency || "USD", maximumFractionDigits: big ? 0 : 2, minimumFractionDigits: big ? 0 : 2 }));
+    return f.format(v);
+  }
+
+  // "$35.1k", "$1.2M", "$980" for summary lines; exact amounts stay in formatMoney.
+  var compactCache = {};
+  function formatCompact(v, currency) {
+    var key = currency || "USD";
+    if (Math.abs(v) < 999.5) return formatMoney(v, currency);
+    var f = compactCache[key] || (compactCache[key] = new Intl.NumberFormat("en-US", { style: "currency",
+      currency: key, notation: "compact", maximumFractionDigits: 1 }));
+    // 999.5–999.99 would print "$999.6"; they round to a thousand.
+    return f.format(Math.abs(v) < 1000 ? Math.sign(v) * 1000 : v).replace(/([0-9])K$/, "$1k");
+  }
+  // Side-panel "worth a look": one row per flagged SKU, largest first. A row is "growth" when any of its flags
+  // is the growth rule; the first non-growth rule message is its reason. Growers only add the delta detail to
+  // growth rows (the growth rule decides what "grew" means).
+  function worthALook(flags, growers, limit) {
+    var rows = new Map();
+    (flags || []).forEach(function (f) {
+      var k = JSON.stringify([f.service_id, f.sku_id]);
+      var row = rows.get(k);
+      if (!row) {
+        row = { service_id: f.service_id, sku_id: f.sku_id, title: f.service + " · " + f.sku, reason: null,
+          amount: f.net, kind: "rule", rules: [], delta: null, prior: null };
+        rows.set(k, row);
+      }
+      if (row.rules.indexOf(f.rule) < 0) row.rules.push(f.rule);
+      if (f.rule === "growth") { row.kind = "growth"; row.growthMessage = f.message; }
+      else if (row.reason === null) row.reason = f.message;
+    });
+    // A growth-only row keeps the growth rule's own message (its grower detail may have been trimmed from the export).
+    rows.forEach(function (row) { if (row.reason === null && row.growthMessage) row.reason = row.growthMessage; delete row.growthMessage; });
+    (growers || []).forEach(function (g) {
+      var row = rows.get(JSON.stringify([g.service_id, g.sku_id])), n = g.metrics && g.metrics.net;
+      if (row && row.kind === "growth" && n && n.delta !== null) { row.delta = n.delta; row.prior = n.prior; }
+    });
+    var out = Array.from(rows.values());
+    out.sort(function (a, b) { return b.amount - a.amount || a.title.localeCompare(b.title); });
+    return { rows: out.slice(0, limit || 6), count: out.length };
+  }
+
+  return { buildModel: buildModel, dimLabel: dimLabel, dimKey: dimKey, rowValue: rowValue, resValue: resValue,
+    buildTree: buildTree, series: series, usageByUnit: usageByUnit, squarify: squarify, neighbor: neighbor,
+    nextVisible: nextVisible, cutChars: cutChars,
+    markFromNode: markFromNode, markConflict: markConflict, markAmount: markAmount, unionTotal: unionTotal,
+    validMark: validMark, markId: markId, normalizeMarks: normalizeMarks, skusMatching: skusMatching,
+    storageKey: storageKey, mdEscape: mdEscape, formatMoney: formatMoney,
+    formatCompact: formatCompact, worthALook: worthALook };
+})();
+</script>
+<script id="app">
+(function () {
+  "use strict";
+  var data = JSON.parse(document.getElementById("data").textContent);
+  var m = CT.buildModel(data), meta = data.meta;
+  function $(id) { return document.getElementById(id); }
+  var mapEl = $("map"), stage = $("stage"), tip = $("tip");
+  var GROUPINGS = ["service", "project", "region"].concat(meta.labels.map(function (l) { return "label:" + l; }));
+  var METRICS = ["net", "cost", "list"];
+  var METRIC_NAMES = { net: "net (after credits)", cost: "cost (before credits)", list: "list price" };
+  var METRIC_SHORT = { net: "Net", cost: "Cost", list: "List" };
+  var CAT_VARS = { "Compute": "--compute", "Storage": "--storage", "Network": "--network", "Databases": "--databases",
+    "Data & Analytics": "--data", "Logging & Ops": "--ops", "Tax & Support": "--tax", "Other": "--other" };
+  var LEVEL_NAMES = { service: ["service", "services"], sku: ["SKU", "SKUs"], project: ["project", "projects"],
+    region: ["region", "regions"], resource: ["resource", "resources"] };
+  var SVGNS = "http://www.w3.org/2000/svg";
+  var flagsBySku = new Map();
+  data.flags.forEach(function (f) {
+    var k = JSON.stringify([f.service_id, f.sku_id]);
+    if (!flagsBySku.has(k)) flagsBySku.set(k, []);
+    flagsBySku.get(k).push(f);
+  });
+  var state = { grouping: "service", metric: METRICS.indexOf(data.view.metric) >= 0 ? data.view.metric : "net",
+    color: "category", depth: 2, text: "", path: [], sel: 0, zoom: 1, ox: 0, oy: 0, panelNode: null };
+  var tree = null, current = null, bill = null, rects = [], overlayOpen = false, unionCache = null;
+  var SKEY = CT.storageKey(meta);
+  var marks = loadMarks();
+  var periodDays = Math.round((Date.parse(meta.period[1]) - Date.parse(meta.period[0])) / 86400000) + 1;
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = String(text);
+    return e;
+  }
+  function button(text, onClick, cls) {
+    var b = el("button", cls || "", text);
+    b.type = "button";
+    b.addEventListener("click", onClick);
+    return b;
+  }
+  function money(v) { return CT.formatMoney(v, meta.currency); }
+  function compact(v) { return CT.formatCompact(v, meta.currency); }
+  function fmtNum(v) { return new Intl.NumberFormat("en-US", { maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 2 }).format(v); }
+  function fmtDay(d) { return new Date(d + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }); }
+  function listOk() { return meta.list_complete.period && meta.list_complete.prior; }
+  function compareOk() { return meta.prior_covered && (state.metric !== "list" || listOk()); }
+  function groupName(g) { return g.indexOf("label:") === 0 ? g.slice(6) : g; }
+  function filtered() { return state.text.trim() !== ""; }
+  function catOf(nd) {
+    var sid = nd.filter.service !== undefined ? CT.dimKey(m, "service", nd.filter.service) : null;
+    return sid ? data.categories[sid] || "Other" : null;
+  }
+  function hue(nd) {
+    var cat = catOf(nd);
+    if (cat) return "var(" + CAT_VARS[cat] + ")";
+    var best = null;
+    nd.children.forEach(function (c) { if (!best || c.weight > best.weight) best = c; });
+    return best ? hue(best) : "var(--other)";
+  }
+  function deltaSpan(cur, prior, ok) {
+    if (!(ok === undefined ? compareOk() : ok)) return el("span", "mut", "—");
+    var d = cur - prior;
+    if (Math.abs(d) < 0.005) return el("span", "mut", "no change");
+    var pct = prior > 0 ? (d >= 0 ? "+" : "−") + Math.abs(d / prior * 100).toFixed(1) + "% " : "";
+    return el("span", d > 0.005 ? "upc" : d < -0.005 ? "downc" : "mut", pct + (d >= 0 ? "+" : "−") + money(Math.abs(d)));
+  }
+  function toast(msg) {
+    var t = $("toast");
+    t.textContent = msg;
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(function () { t.textContent = ""; }, 4000);
+  }
+
+  function loadMarks() {
+    try {
+      var raw = localStorage.getItem(SKEY);
+      var v = raw ? JSON.parse(raw) : null;
+      return CT.normalizeMarks(m, v && v.marks);
+    } catch (e) { return []; }
+  }
+  function unionNet() {
+    if (!unionCache) unionCache = CT.unionTotal(m, marks, "net");
+    return unionCache;
+  }
+  function saveMarks() {
+    unionCache = null;
+    try { localStorage.setItem(SKEY, JSON.stringify({ period: meta.period, marks: marks })); }
+    catch (e) { /* storage blocked: marks last for this page view only */ }
+  }
+
+  function rebuild() {
+    tree = CT.buildTree(m, state.grouping, state.metric, state.text);
+    // The bill (and "of bill" shares) never shrink with the name filter.
+    bill = filtered() ? CT.buildTree(m, "service", state.metric, "") : tree;
+    resolvePath();
+    if (state.panelNode) {
+      var key = state.panelNode.key;
+      state.panelNode = current.children.find(function (c) { return c.key === key && c.weight <= 0; }) || null;
+    }
+    render();
+  }
+  function resolvePath() {
+    var nd = tree, kept = [];
+    for (var i = 0; i < state.path.length; i++) {
+      var key = state.path[i];
+      var c = nd.children.find(function (x) { return x.key === key; });
+      if (!c) break;
+      nd = c;
+      kept.push(key);
+    }
+    state.path = kept;
+    current = nd;
+  }
+  function render() { renderHeader(); renderSub(); renderMap(); renderPanel(); renderFooter(); }
+
+  // ---------------------------------------------------------------- top bar
+  function levelOf(nd) {
+    var c = nd.children[0];
+    if (!c) return "service";
+    if (c.isResource) return "resource";
+    return c.dim.indexOf("label:") === 0 ? "service" : c.dim;
+  }
+  function renderHeader() {
+    var trail = [tree], nd = tree;
+    state.path.forEach(function (key) { nd = nd.children.find(function (x) { return x.key === key; }); trail.push(nd); });
+    var crumbs = [el("span", "", "/")];
+    trail.forEach(function (n, i) {
+      var label = i === 0 ? "all " + (state.grouping.indexOf("label:") === 0 ? groupName(state.grouping) + " values" : LEVEL_NAMES[levelOf(tree)][1]) : n.label;
+      if (i === trail.length - 1) { crumbs.push(el("span", "cur", label)); return; }
+      crumbs.push(button(label, function () {
+        state.path = state.path.slice(0, i); state.sel = 0; state.panelNode = null;
+        resetZoom(); resolvePath(); render(); mapEl.focus();
+      }), el("span", "", "/"));
+    });
+    $("crumbs").replaceChildren.apply($("crumbs"), crumbs);
+    $("groupSeg").replaceChildren.apply($("groupSeg"), GROUPINGS.map(function (g, i) {
+      var b = button(g === "service" ? "Service" : g === "project" ? "Project" : g === "region" ? "Region" : groupName(g),
+        function () { setGrouping(g); mapEl.focus(); });
+      b.setAttribute("aria-pressed", String(state.grouping === g));
+      b.title = "Group by " + groupName(g) + " (" + (i + 1) + ")";
+      return b;
+    }));
+    $("metricSeg").replaceChildren.apply($("metricSeg"), METRICS.map(function (k) {
+      var b = button(METRIC_SHORT[k], function () { state.metric = k; rebuild(); mapEl.focus(); });
+      b.setAttribute("aria-pressed", String(state.metric === k));
+      b.title = METRIC_NAMES[k] + " (m)";
+      return b;
+    }));
+    var box = $("colorBox");
+    box.checked = state.color === "change";
+    box.disabled = !compareOk();
+    $("colorChk").classList.toggle("off", !compareOk());
+    $("colorChk").title = compareOk() ? "Color by change vs the previous period (c)"
+      : "Needs the previous period" + (meta.prior_covered ? " with list prices" : ", which the export does not cover");
+  }
+
+  // ---------------------------------------------------------------- sub bar
+  function renderSub() {
+    var parts = [];
+    var lvl = levelOf(current), n = current.children.length, below = 0, belowLvl = null;
+    current.children.forEach(function (c) { below += c.children.length || 0; if (!belowLvl && c.children.length) belowLvl = levelOf(c); });
+    var span = el("span");
+    var what = current === tree && state.grouping.indexOf("label:") === 0 ? groupName(state.grouping) + " values" : LEVEL_NAMES[lvl][n === 1 ? 0 : 1];
+    span.append(el("b", "", compact(current.cur)), " · " + fmtDay(meta.period[0]) + " – " + fmtDay(meta.period[1]) + "  ·  " +
+      n + " " + what + (below ? " · " + below + " " + LEVEL_NAMES[belowLvl][below === 1 ? 0 : 1] : ""));
+    parts.push(span);
+    if (filtered()) parts.push(el("span", "chip", "filtered: “" + state.text.trim() + "”"));
+    if (state.zoom > 1 || state.depth !== 2) {
+      parts.push(el("span", "chip", (state.zoom > 1 ? "zoom " + state.zoom.toFixed(1) + "×" : "") +
+        (state.zoom > 1 && state.depth !== 2 ? " · " : "") + (state.depth !== 2 ? "depth " + state.depth : "")));
+    }
+    var legend = el("div", "legend"), seen = {};
+    function swatch(label, color) {
+      var s = el("span"), i = el("i");
+      i.style.background = color;
+      i.style.setProperty("--c", color);
+      s.append(i, label);
+      legend.append(s);
+    }
+    if (state.color === "change" && compareOk()) {
+      swatch("down", "var(--down)"); swatch("no change / new", "var(--neutral)"); swatch("up", "var(--up)");
+    } else {
+      Object.keys(data.categories).forEach(function (sid) { seen[data.categories[sid]] = true; });
+      Object.keys(CAT_VARS).forEach(function (cat) { if (seen[cat]) swatch(cat, "var(" + CAT_VARS[cat] + ")"); });
+    }
+    var hs = el("span"), hi = el("i", "hatch");
+    hs.append(hi, "worth a look");
+    legend.append(hs);
+    parts.push(legend);
+    var notes = [];
+    if (!meta.prior_covered) notes.push("the export does not cover the previous period, so comparisons are off");
+    if (meta.period_covered === false) notes.push("the export does not cover the whole period; totals are partial");
+    if (meta.period_end_covered === false) notes.push("data ends on " + fmtDay(meta.data_through) + ", before the period end; the export may still be backfilling, so totals are partial");
+    if (state.metric === "list" && !meta.list_complete.period) notes.push("some rows have no list price; list totals are partial");
+    if (state.metric === "list" && meta.prior_covered && !listOk()) notes.push("list price is missing on some rows, so list comparisons are off");
+    parts.push(el("div", "notes", notes.length ? "⚠ " + notes.join(" · ") : ""));
+    $("sub").replaceChildren.apply($("sub"), parts);
+  }
+
+  // ---------------------------------------------------------------- map
+  function flagsFor(nd) {
+    if (!nd || nd.dim !== "sku") return [];
+    return flagsBySku.get(JSON.stringify([CT.dimKey(m, "service", nd.filter.service), CT.dimKey(m, "sku", nd.filter.sku)])) || [];
+  }
+  function isMarked(nd) {
+    if (!marks.length) return false;
+    var mk = CT.markFromNode(m, nd);
+    return !mk.error && marks.some(function (x) { return x.id === mk.id; });
+  }
+  // Change mode: the hue says direction, the fill strength (18–36 %, capped so text stays ≥ 4.5:1 incl. hover) says magnitude;
+  // the 18 % floor keeps small changes distinguishable from "no change".
+  function changeFill(nd) {
+    if (nd.prior <= 0 || Math.abs(nd.cur - nd.prior) < 0.005) return { c: "var(--neutral)", pct: 30 };
+    var ratio = Math.max(-1, Math.min(1, (nd.cur - nd.prior) / nd.prior));
+    return { c: ratio >= 0 ? "var(--up)" : "var(--down)", pct: Math.round(18 + 18 * Math.abs(ratio)) };
+  }
+  // Leaf second line: change % when comparable. Resource labels already carry project/region.
+  function context(nd) {
+    if (nd.isResource || !compareOk() || nd.prior <= 0) return "";
+    var p = (nd.cur - nd.prior) / nd.prior * 100;
+    return Math.abs(p) >= 0.5 ? (p > 0 ? "+" : "−") + Math.abs(p).toFixed(0) + "%" : "";
+  }
+  function renderMap() {
+    stage.replaceChildren();
+    rects = CT.squarify(current.children, 0, 0, mapEl.clientWidth, mapEl.clientHeight);
+    if (!rects.length) {
+      stage.append(el("div", "empty", current.children.length
+        ? "Nothing to draw: everything here is zero or negative for this metric. The panel lists it."
+        : filtered() ? "Nothing matches “" + state.text.trim() + "”" : "No spend here in this period"));
+    } else {
+      if (state.sel >= rects.length) state.sel = 0;
+      rects.forEach(function (r, i) { drawCell(stage, r, 1, i); });
+    }
+    applyZoom();
+  }
+  function drawCell(parent, r, depth, idx) {
+    if (depth === 1) r = { item: r.item, x: r.x + 1.5, y: r.y + 1.5, w: r.w - 3, h: r.h - 3 };  // gutters between top-level boxes
+    if (r.w < 2 || r.h < 2) return;
+    var nd = r.item;
+    var asGroup = depth < state.depth && nd.children.some(function (c) { return c.weight > 0; }) && r.w > 44 && r.h > 38;
+    var cell = el("div", "cell " + (asGroup ? "group" : "leaf"));
+    cell.style.left = r.x + "px"; cell.style.top = r.y + "px"; cell.style.width = r.w + "px"; cell.style.height = r.h + "px";
+    if (state.color === "change" && compareOk() && !asGroup) {
+      var cf = changeFill(nd);
+      cell.classList.add("chg");
+      cell.style.setProperty("--c", cf.c);
+      cell.style.setProperty("--chg", cf.pct + "%");
+    } else {
+      cell.style.setProperty("--c", hue(nd));
+    }
+    if (flagsFor(nd).length) cell.classList.add("flagged");
+    if (isMarked(nd)) cell.classList.add("marked");
+    if (asGroup) {
+      var gh = el("div", "gh");
+      gh.append(el("span", "n", nd.label), el("span", "v", money(nd.cur)));
+      cell.append(gh);
+    } else if (r.w > 42 && r.h > 17) {
+      cell.append(el("div", "n", nd.label));
+      if (r.h > 32) {
+        var ctx = context(nd);
+        cell.append(el("div", "v", money(nd.cur) + (ctx ? " · " + ctx : "")));
+      }
+    }
+    if (depth === 1) {
+      cell.dataset.idx = idx;
+      if (idx === state.sel) cell.classList.add("sel");
+      cell.addEventListener("click", function () { state.sel = idx; state.panelNode = null; descend(); });
+      cell.addEventListener("mouseenter", function () {
+        if (state.sel === idx) return;
+        state.sel = idx; state.panelNode = null; markSelection();
+        // Re-rendering the panel would drop keyboard focus from a panel button; leave it until focus returns.
+        if (!$("panel").contains(document.activeElement)) renderPanel({ quiet: true });
+      });
+    }
+    cell.addEventListener("mousemove", function (e) { e.stopPropagation(); showTip(nd, e); });
+    parent.append(cell);
+    if (asGroup) {
+      CT.squarify(nd.children, 2, 19, r.w - 6, r.h - 23).forEach(function (ir) { drawCell(cell, ir, depth + 1, -1); });
+    }
+  }
+  function showTip(nd, e) {
+    tip.replaceChildren(el("div", "t1", nd.isResource ? nd.tuple.name : nd.label),
+      el("div", "t2", money(nd.cur) + (bill.cur > 0 ? " · " + (nd.cur / bill.cur * 100).toFixed(1) + "% of bill" : "")));
+    if (compareOk()) { var l3 = el("div", "t2"); l3.append("vs previous: ", deltaSpan(nd.cur, nd.prior)); tip.append(l3); }
+    tip.hidden = false;
+    var x = e.clientX + 14, y = e.clientY + 14, w = tip.offsetWidth, h = tip.offsetHeight;
+    if (x + w > window.innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > window.innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  }
+  function markSelection() {
+    stage.querySelectorAll(":scope > .cell").forEach(function (t) { t.classList.toggle("sel", Number(t.dataset.idx) === state.sel); });
+  }
+  function selected() { return rects[state.sel] ? rects[state.sel].item : null; }
+  function target() { return state.panelNode || selected(); }
+
+  // ---------------------------------------------------------------- side panel
+  function bars(vals) {
+    var svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("viewBox", "0 0 100 46");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Daily " + state.metric + ": previous period in grey, then the current period");
+    var defs = document.createElementNS(SVGNS, "defs"), pat = document.createElementNS(SVGNS, "pattern"), pl = document.createElementNS(SVGNS, "path");
+    pat.setAttribute("id", "prov"); pat.setAttribute("width", "2"); pat.setAttribute("height", "2");
+    pat.setAttribute("patternUnits", "userSpaceOnUse"); pat.setAttribute("patternTransform", "rotate(45)");
+    pl.setAttribute("d", "M0 0 V2"); pl.style.stroke = "var(--accent)"; pl.style.strokeWidth = "1";
+    pat.append(pl); defs.append(pat);
+    var patNeg = pat.cloneNode(true);  // provisional + negative keeps the decrease color
+    patNeg.setAttribute("id", "provNeg");
+    patNeg.firstChild.style.stroke = "var(--down)";
+    defs.append(patNeg); svg.append(defs);
+    var n = vals.length, max = Math.max.apply(null, vals.concat([0])), min = Math.min.apply(null, vals.concat([0]));
+    var span = (max - min) || 1, zero = 45 * max / span + 0.5;  // y of the zero line; bars grow up (positive) or down (negative)
+    var start = m.days.indexOf(meta.period[0]), last = m.days.indexOf(meta.provisional_day);
+    if (last >= 0) svg.setAttribute("aria-label", svg.getAttribute("aria-label") + "; the last day is provisional");
+    var w = 100 / Math.max(n, 1);
+    var base = document.createElementNS(SVGNS, "rect");
+    base.setAttribute("x", "0"); base.setAttribute("width", "100"); base.setAttribute("y", (zero - 0.15).toFixed(3)); base.setAttribute("height", "0.3");
+    base.style.fill = "var(--line)";
+    svg.append(base);
+    vals.forEach(function (v, i) {
+      var h = Math.abs(v) / span * 45;
+      if (h < 0.01) return;
+      var rect = document.createElementNS(SVGNS, "rect");
+      rect.setAttribute("x", (i * w + w * 0.12).toFixed(3));
+      rect.setAttribute("width", (w * 0.76).toFixed(3));
+      rect.setAttribute("y", (v >= 0 ? zero - h : zero).toFixed(3));
+      rect.setAttribute("height", h.toFixed(3));
+      rect.style.fill = i === last ? (v < 0 ? "url(#provNeg)" : "url(#prov)") : v < 0 ? "var(--down)" : i >= start ? "var(--accent)" : "var(--neutral)";
+      var t = document.createElementNS(SVGNS, "title");
+      t.textContent = m.days[i] + ": " + money(v) + (i === last ? " (provisional)" : "");
+      rect.append(t);
+      svg.append(rect);
+    });
+    var wrap = el("div", "spark"), axis = el("div", "axis");
+    axis.append(el("span", "", fmtDay(m.days[0])), el("span", "", "previous " + periodDays + "d | last " + periodDays + "d"),
+      el("span", "", fmtDay(m.days[n - 1])));
+    wrap.append(svg, axis);
+    return wrap;
+  }
+  var partsFmt = new Intl.NumberFormat("en-US", { style: "currency", currency: meta.currency || "USD" });
+  function bigNumber(v, cls) {
+    // Format once (correct rounding, sign, and minor units), then shrink the decimal part.
+    var big = el("div", cls || "big"), whole = "", frac = "";
+    partsFmt.formatToParts(v).forEach(function (p) {
+      if (p.type === "decimal" || p.type === "fraction") frac += p.value; else whole += p.value;
+    });
+    big.append(whole);
+    if (frac && Math.abs(v) >= 100) big.append(el("small", "", frac)); else big.append(frac);
+    return big;
+  }
+  function stat(label, value) {
+    var d = el("div");
+    d.append(el("span", "lbl", label));
+    if (value instanceof Node) d.append(value); else d.append(String(value));
+    return d;
+  }
+  function kindOf(nd) {
+    if (nd === tree) return "whole bill";
+    if (nd.isResource) return nd.synthetic ? "other resources" : "resource";
+    if (nd.dim === "sku") return "SKU";
+    if (nd.dim && nd.dim.indexOf("label:") === 0) return "label value";
+    return nd.dim;
+  }
+  function pathLabel(nd) {
+    var parts = [];
+    for (var n = nd; n && n.parent; n = n.parent) parts.unshift(n.label);
+    return parts.join(" › ");
+  }
+  function renderPanel(opts) {
+    var p = $("panel"), nd = state.panelNode || selected() || current;
+    var sel = el("section");
+    sel.append(el("div", "h", "Selection"), el("div", "sel-name", nd === tree ? "Everything" : nd.label));
+    var chain = state.grouping === "service" ? ["services", "SKUs"] : [groupName(state.grouping), "services", "SKUs"];
+    if (m.hasResources && state.grouping.indexOf("label:") !== 0) chain.push("resources");
+    var where = nd === tree ? chain.join(" → ") : nd.isResource ? nd.tuple.name
+      : nd.parent && nd.parent !== tree ? pathLabel(nd.parent) : "top level · " + kindOf(nd);
+    sel.append(el("div", "sel-path", where));
+    sel.append(bigNumber(nd.cur), el("div", "period", "last " + periodDays + " days · " + fmtDay(meta.period[0]) + " – " + fmtDay(meta.period[1])));
+    var share = bill.cur > 0 ? Math.max(0, Math.min(1, nd.cur / bill.cur)) : 0;
+    var bar = el("div", "bar"), bi = el("i");
+    bi.style.width = (share * 100).toFixed(1) + "%";
+    bar.append(bi);
+    sel.append(bar);
+    var stats = el("div", "stats");
+    stats.append(stat("Of bill", bill.cur > 0 ? (nd.cur / bill.cur * 100).toFixed(1) + "%" : "—"),
+      stat("vs prev " + periodDays + "d", deltaSpan(nd.cur, nd.prior)),
+      stat("Per day", money(nd.cur / periodDays)), stat("Monthly pace", compact(nd.cur / periodDays * 30)),
+      stat("Kind", kindOf(nd)), stat("Category", catOf(nd) || "—"));
+    sel.append(stats);
+    if (!nd.isResource) {
+      sel.append(bars(CT.series(m, nd.filter, state.metric)));
+      var u = CT.usageByUnit(m, nd.filter), units = Object.keys(u);
+      if (units.length) sel.append(el("div", "usage", "Usage: " + units.map(function (k) { return fmtNum(u[k]) + " " + k; }).join(" · ")));
+      if (filtered()) sel.append(el("div", "usage", "Daily bars and usage ignore the name filter."));
+    }
+    flagsFor(nd).forEach(function (f) { sel.append(el("div", "msg", f.message)); });
+    var hidden = current.children.filter(function (c) { return c.weight <= 0; });
+    if (hidden.length) {
+      var hid = el("div", "usage", "Not drawn here (zero or negative): ");
+      hidden.forEach(function (c, i) {
+        if (i) hid.append(" ");
+        hid.append(button(c.label + " " + money(c.cur), function () {
+          if (c.children.length) { state.path.push(c.key); state.sel = 0; state.panelNode = null; resetZoom(); resolvePath(); render(); }
+          else { state.panelNode = c; renderPanel(); }
+          mapEl.focus();
+        }, "btn"));
+      });
+      sel.append(hid);
+    }
+    if (!CT.markFromNode(m, nd, state.text).error) {
+      sel.append(el("div", "usage", isMarked(nd) ? "Marked for review · x unmarks · r reviews" : "x marks this for review"));
+    }
+
+    if (!(opts && opts.quiet)) $("live").textContent = (nd === tree ? "Everything" : nd.label) + ", " + money(nd.cur) +
+      (bill.cur > 0 ? ", " + (nd.cur / bill.cur * 100).toFixed(1) + " percent of bill" : "");
+    var sections = [sel];
+    var wal = CT.worthALook(data.flags, data.export && data.export.growers ? data.export.growers.items : [], 6), rows = wal.rows;
+    if (rows.length) {
+      var wl = el("section"), head = el("div", "h"), total = 0, max = 0;
+      rows.forEach(function (r) { total += r.amount; max = Math.max(max, r.amount); });
+      head.append(el("span", "", "Worth a look" + (wal.count > rows.length ? " · top " + rows.length : "")),
+        button(compact(total) + (wal.count > rows.length ? " · all " + wal.count + " →" : " →"), showFlags));
+      wl.append(head);
+      rows.forEach(function (r) {
+        var b = el("button", "hint");
+        b.type = "button";
+        b.style.setProperty("--c", r.kind === "growth" ? "var(--up)" : "var(--accent)");
+        var reason = r.reason || "";
+        if (r.kind === "growth" && r.delta !== null && r.prior > 0) {
+          reason = "up " + (r.delta / r.prior * 100).toFixed(0) + "% (+" + money(r.delta) + ") vs previous" +
+            (r.reason && r.rules.length > 1 ? " · " + r.reason : "");
+        }
+        var hb = el("div", "hb"), hi = el("i");
+        hi.style.width = (max > 0 ? r.amount / max * 100 : 0).toFixed(1) + "%";
+        hb.append(hi);
+        b.append(el("div", "hn", r.title), el("div", "hv", money(r.amount)), el("div", "hs", reason), hb);
+        b.title = r.title + (reason ? " — " + reason : "");
+        b.addEventListener("click", function () { goToSku(r.service_id, r.sku_id); });
+        wl.append(b);
+      });
+      sections.push(wl);
+    }
+    if (marks.length) {
+      var rv = el("section", "review"), rh = el("div", "h");
+      rh.append(el("span", "", "Review · " + marks.length + " marked"), el("b", "", "net"));
+      rv.append(rh, bigNumber(unionNet().total), button("Open review (r)", showReview, "btn"));
+      sections.push(rv);
+    }
+    var billSec = el("section", "bill"), bh = el("div", "h");
+    bh.append(el("span", "", "Bill · " + fmtDay(meta.period[0]) + " – " + fmtDay(meta.period[1])));
+    billSec.append(bh, bigNumber(bill.cur));
+    function row(k, v) {
+      var d = el("div", "bill-row"), b2 = el("b");
+      if (v instanceof Node) b2.append(v); else b2.textContent = v;
+      d.append(el("span", "", k), b2);
+      billSec.append(d);
+    }
+    if (meta.prior_covered) { row("previous " + periodDays + "d", money(bill.prior)); row("change", deltaSpan(bill.cur, bill.prior)); }
+    row("metric", METRIC_NAMES[state.metric]);
+    row("export", meta.export === "detailed" ? "detailed (resources)" : "standard (no resources)");
+    if (meta.latest_export_seen) row("latest export", meta.latest_export_seen.slice(0, 16).replace("T", " ") + " UTC");
+    sections.push(billSec);
+    p.replaceChildren.apply(p, sections);
+  }
+
+  function renderFooter() {
+    var keys = el("div", "keys");
+    [["click", "open"], ["enter", "open"], ["⌫", "up"], ["esc", "clear / up"], ["1–" + GROUPINGS.length, "group"], ["m", "metric"],
+      ["c", "color"], ["[ ]", "depth"], ["x", "mark"], ["r", "review"], ["/", "filter"], ["e", "export"], ["?", "keys"]].forEach(function (k) {
+      var s = el("span"); s.append(el("kbd", "", k[0]), k[1]); keys.append(s);
+    });
+    var box = el("div", "meta");
+    if (meta.demo) box.append(el("span", "badge", "demo data"));
+    box.append(el("span", "", METRIC_NAMES[state.metric]), el("span", "", meta.export + " export"),
+      el("span", "", "provisional: " + fmtDay(meta.provisional_day)),
+      el("span", "", "read " + String(meta.fetched_at || "").slice(0, 16).replace("T", " ")));
+    $("foot").replaceChildren(keys, box);
+  }
+
+  // ---------------------------------------------------------------- navigation
+  function applyZoom() {
+    stage.style.transform = state.zoom === 1 ? "" : "translate(" + state.ox + "px," + state.oy + "px) scale(" + state.zoom + ")";
+  }
+  function resetZoom() { state.zoom = 1; state.ox = 0; state.oy = 0; }
+  function descend() {
+    var nd = target();
+    if (!nd || !nd.children.length) return;
+    state.path.push(nd.key); state.sel = 0; state.panelNode = null;
+    tip.hidden = true;
+    resetZoom(); resolvePath(); render();
+  }
+  function ascend() {
+    if (!state.path.length) return;
+    var key = state.path.pop();
+    resolvePath();
+    state.sel = Math.max(0, current.children.filter(function (c) { return c.weight > 0; }).findIndex(function (c) { return c.key === key; }));
+    state.panelNode = null;
+    resetZoom(); render();
+  }
+  // Keyboard selection can land outside a zoomed view; zoom back out so the selected box stays visible.
+  function unzoomForKeys() { if (state.zoom > 1) { resetZoom(); applyZoom(); renderSub(); } }
+  var MIN_TILE = 5;  // drawCell skips boxes under 2 px after the 3 px gutter
+  function move(dir) { if (!rects.length) return; unzoomForKeys(); state.sel = CT.neighbor(rects, state.sel, dir, MIN_TILE); state.panelNode = null; markSelection(); renderPanel(); }
+  function step(d) {
+    if (!rects.length) return;
+    unzoomForKeys();
+    state.sel = CT.nextVisible(rects, state.sel, d, MIN_TILE); state.panelNode = null; markSelection(); renderPanel();
+  }
+  function setGrouping(g) { state.grouping = g; state.path = []; state.sel = 0; state.panelNode = null; resetZoom(); rebuild(); }
+  function setColor(on) {
+    if (on && !compareOk()) { toast("Change colors need the previous period" + (meta.prior_covered ? " with list prices." : ", which the export does not cover.")); return; }
+    state.color = on ? "change" : "category";
+    renderHeader(); renderSub(); renderMap();
+  }
+  function toggleMark() {
+    var nd = target();
+    if (!nd) return;
+    var mk = CT.markFromNode(m, nd, state.text);
+    if (mk.error) { toast(mk.error); return; }
+    var i = marks.findIndex(function (x) { return x.id === mk.id; });
+    if (i >= 0) { marks.splice(i, 1); toast("Unmarked " + nd.label); }
+    else {
+      var clash = CT.markConflict(m, marks, mk);
+      if (clash) { toast(clash); return; }
+      mk.label = groupName(state.grouping) + ": " + pathLabel(nd);
+      marks.push(mk);
+      toast("Marked " + nd.label + " · r to review");
+    }
+    saveMarks(); renderMap(); renderPanel();
+  }
+
+  // ---------------------------------------------------------------- overlays
+  function openOverlay(title, body) {
+    var close = button("Close (Esc)", closeOverlay, "btn");
+    var row = el("div", "row");
+    row.append(close);
+    var h2 = el("h2", "", title);
+    h2.id = "dlgTitle";
+    $("overlayBox").replaceChildren(h2, body, row);
+    $("overlay").hidden = false;
+    document.querySelector(".app").inert = true;  // keeps Tab and clicks inside the dialog
+    overlayOpen = true;
+    tip.hidden = true;
+    close.focus();
+  }
+  function closeOverlay() { $("overlay").hidden = true; document.querySelector(".app").inert = false; overlayOpen = false; mapEl.focus(); }
+  function showFlags() {
+    var wrap = el("div"), table = el("table"), head = el("tr");
+    ["Service · SKU", "Net", "Rule", "What to check"].forEach(function (h) { head.append(el("th", "", h)); });
+    table.append(head);
+    data.flags.forEach(function (f) {
+      var tr = el("tr"), cell = el("td");
+      cell.append(button(f.service + " · " + f.sku, function () { closeOverlay(); goToSku(f.service_id, f.sku_id); }, "btn"));
+      tr.append(cell, el("td", "", money(f.net)), el("td", "", f.rule), el("td", "", f.message));
+      table.append(tr);
+    });
+    if (!data.flags.length) wrap.append(el("p", "mut", "No money-pit rules matched."));
+    else wrap.append(table);
+    openOverlay("Flags · " + data.flags.length, wrap);
+  }
+  function markFlags(mk) {
+    var out = [];
+    CT.skusMatching(m, mk).forEach(function (pair) {
+      var p = pair.split("|");
+      var key = JSON.stringify([CT.dimKey(m, "service", Number(p[0])), CT.dimKey(m, "sku", Number(p[1]))]);
+      (flagsBySku.get(key) || []).forEach(function (f) { if (out.indexOf(f) < 0) out.push(f); });
+    });
+    return out;
+  }
+  function showReview() {
+    var wrap = el("div");
+    if (!marks.length) {
+      wrap.append(el("p", "mut", "Nothing marked yet. Select a box and press x."));
+      openOverlay("Review", wrap);
+      return;
+    }
+    var u = unionNet(), netOk = !!meta.prior_covered;
+    var table = el("table"), head = el("tr");
+    ["Item", "Net", "Change", "Flags", ""].forEach(function (h) { head.append(el("th", "", h)); });
+    table.append(head);
+    var md = ["| Item | Net | Change vs prior | Flags |", "|---|---|---|---|"];
+    marks.forEach(function (mk, i) {
+      var cur = u.stale.indexOf(mk.id) >= 0 ? null : CT.markAmount(m, mk, "net", false);
+      var prior = CT.markAmount(m, mk, "net", true) || 0;
+      var rules = markFlags(mk).map(function (f) { return f.rule; }).filter(function (r, j, a) { return a.indexOf(r) === j; }).join(", ");
+      var tr = el("tr"), change = el("td"), td = el("td");
+      change.append(cur === null ? el("span", "mut", "—") : deltaSpan(cur, prior, netOk));
+      td.append(button("Remove", function () { marks.splice(i, 1); saveMarks(); renderMap(); renderPanel(); showReview(); }, "btn"));
+      tr.append(el("td", "", mk.label + (cur === null ? " (stale: not in this data)" : "")),
+        el("td", "", cur === null ? "—" : money(cur)), change, el("td", "", rules || "—"), td);
+      table.append(tr);
+      md.push("| " + CT.mdEscape(mk.label) + " | " + (cur === null ? "stale" : CT.mdEscape(money(cur))) + " | " +
+        (cur === null || !netOk ? "n/a" : CT.mdEscape(money(cur - prior))) + " | " + (rules ? CT.mdEscape(rules) : "—") + " |");
+    });
+    var totalText = money(u.total) + " (" + METRIC_NAMES.net + ", " + meta.period[0] + " to " + meta.period[1] + ")";
+    md.push("", "**Total without double counting:** " + CT.mdEscape(totalText));
+    var tot = el("p");
+    tot.append("Total without double counting: ", el("b", "", totalText));
+    var actions = el("div", "row");
+    actions.append(button("Copy as Markdown", function () {
+      var text = md.join("\n");
+      function fallback() {
+        var ta = el("textarea");
+        ta.value = text;
+        wrap.append(ta);
+        ta.select();
+        toast("Copy is blocked here; the text is selected below.");
+      }
+      try { navigator.clipboard.writeText(text).then(function () { toast("Copied"); }, fallback); } catch (e) { fallback(); }
+    }, "btn"), button("Clear all", function () { marks = []; saveMarks(); renderMap(); renderPanel(); closeOverlay(); }, "btn"));
+    wrap.append(table, tot, actions);
+    openOverlay("Review · " + marks.length + " marked", wrap);
+  }
+  function goToSku(sid, kid) {
+    state.grouping = "service"; state.text = ""; $("filter").value = ""; state.path = [sid]; state.panelNode = null;
+    state.sel = 0;
+    resetZoom(); rebuild();
+    var i = rects.findIndex(function (r) { return r.item.key === kid; });
+    if (i >= 0) { state.sel = i; markSelection(); renderPanel(); }
+    else {  // not drawn (zero or negative here): select it through the panel
+      state.panelNode = current.children.find(function (c) { return c.key === kid; }) || null;
+      renderPanel();
+    }
+    mapEl.focus();
+  }
+  function showHelp() {
+    var rows = [["Click / Enter", "Open the selected box"], ["Backspace", "Go up one level"],
+      ["Esc", "Close a dialog or clear the filter; otherwise go up"], ["Arrow keys", "Move between boxes"],
+      ["n / p", "Next / previous box by size"], ["Scroll", "Zoom toward the pointer"],
+      ["[ / ]", "Draw fewer / more nested levels"], ["/", "Filter by name"],
+      ["1–" + GROUPINGS.length, "Group by " + GROUPINGS.map(groupName).join(", ")],
+      ["m", "Switch metric: net, cost, list"], ["c", "Color by change vs prior"],
+      ["Space / x", "Mark or unmark for review"], ["r", "Review marked items"],
+      ["e", "Download the AI summary JSON"], ["?", "This help"]];
+    var table = el("table");
+    rows.forEach(function (r) { var tr = el("tr"), k = el("td"); k.append(el("kbd", "", r[0])); tr.append(k, el("td", "", r[1])); table.append(tr); });
+    openOverlay("Keys", table);
+  }
+  function downloadExport() {
+    var ex = JSON.parse(JSON.stringify(data.export));
+    function cut(v) { return CT.cutChars(v, 200); }
+    var items = marks.map(function (mk) {
+      var cur = CT.markAmount(m, mk, "net", false), src = mk.filter || mk.resource || {}, f = {};
+      Object.keys(src).forEach(function (k) { f[cut(k)] = cut(src[k]); });
+      return { label: cut(mk.label), net: cur === null ? null : Math.round(cur * 100) / 100, filter: f };
+    });
+    ex.marks_total_net = Math.round(unionNet().total * 100) / 100;
+    var keep = Math.min(items.length, 100), text;
+    for (;;) {
+      var rest = items.slice(keep);
+      ex.marks = { items: items.slice(0, keep), omitted: rest.length,
+        omitted_net: Math.round(rest.reduce(function (s, i) { return s + (i.net || 0); }, 0) * 100) / 100 };
+      if (rest.length) ex.truncated = true;
+      text = JSON.stringify(ex);
+      if (new TextEncoder().encode(text).length <= 65536 || keep === 0) break;
+      keep = Math.floor(keep / 2);
+    }
+    var a = el("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    a.download = "gcp-costtree-export.json";
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    toast("Export downloaded");
+  }
+
+  // ---------------------------------------------------------------- keys
+  function mapKey(k) {
+    switch (k) {
+      case "Enter": descend(); return true;
+      case "Backspace": ascend(); return true;
+      case "ArrowLeft": move("left"); return true;
+      case "ArrowRight": move("right"); return true;
+      case "ArrowUp": move("up"); return true;
+      case "ArrowDown": move("down"); return true;
+      case "n": step(1); return true;
+      case "p": step(-1); return true;
+      case " ": case "x": toggleMark(); return true;
+      case "[": state.depth = Math.max(1, state.depth - 1); renderSub(); renderMap(); return true;
+      case "]": state.depth = Math.min(4, state.depth + 1); renderSub(); renderMap(); return true;
+    }
+    return false;
+  }
+  function globalKey(k) {
+    if (k === "/") { $("filter").focus(); return true; }
+    if (k >= "1" && k <= "9") { var g = GROUPINGS[Number(k) - 1]; if (g) setGrouping(g); return true; }
+    if (k === "m") { state.metric = METRICS[(METRICS.indexOf(state.metric) + 1) % METRICS.length]; rebuild(); return true; }
+    if (k === "c") { setColor(state.color !== "change"); return true; }
+    if (k === "r") { showReview(); return true; }
+    if (k === "e") { downloadExport(); return true; }
+    if (k === "?") { showHelp(); return true; }
+    return false;
+  }
+  function onEscape(editable) {
+    if (overlayOpen) { closeOverlay(); return; }
+    var f = $("filter");
+    if (f.value || state.text) { f.value = ""; setText(""); mapEl.focus(); return; }
+    if (editable) { mapEl.focus(); return; }
+    ascend();
+  }
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var t = e.target, tag = t && t.tagName;
+    var editable = (tag === "INPUT" && t.type !== "checkbox") || tag === "TEXTAREA" || !!(t && t.isContentEditable);
+    if (e.key === "Escape") { e.preventDefault(); onEscape(editable); return; }
+    if (tag === "INPUT" || editable) return;  // main spec §9.4: global keys are ignored in inputs
+    if ((tag === "BUTTON" || tag === "A") && (e.key === "Enter" || e.key === " ")) return;
+    if (overlayOpen) return;
+    if ((t === mapEl && mapKey(e.key)) || globalKey(e.key)) e.preventDefault();
+  });
+
+  var filterTimer;
+  function setText(v) { clearTimeout(filterTimer); state.text = v; state.sel = 0; state.panelNode = null; rebuild(); }
+  $("filter").addEventListener("input", function () {
+    var v = this.value;
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(function () { setText(v); }, 150);
+  });
+  $("colorBox").addEventListener("change", function () { setColor(this.checked); this.checked = state.color === "change"; mapEl.focus(); });
+  $("exportBtn").addEventListener("click", downloadExport);
+  $("overlay").addEventListener("click", function (e) { if (e.target === $("overlay")) closeOverlay(); });
+  mapEl.addEventListener("mouseleave", function () { tip.hidden = true; });
+  // Hover may have moved the selection while a panel button had focus; catch the panel up when focus returns.
+  mapEl.addEventListener("focus", function () { renderPanel({ quiet: true }); });
+  mapEl.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    var b = mapEl.getBoundingClientRect(), px = e.clientX - b.left, py = e.clientY - b.top;
+    var z = Math.min(8, Math.max(1, state.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    if (z === 1) resetZoom();
+    else {
+      state.ox = px - (px - state.ox) * (z / state.zoom);
+      state.oy = py - (py - state.oy) * (z / state.zoom);
+      state.zoom = z;
+    }
+    applyZoom(); renderSub();
+  }, { passive: false });
+  var resizeFrame = 0;
+  window.addEventListener("resize", function () {
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(renderMap);
+  });
+
+  rebuild();
+  mapEl.focus();
+  var stale = unionNet().stale;
+  if (stale.length) toast(stale.length + " saved mark(s) no longer match this data; see the review list (r).");
+})();
+</script>
+</body>
+</html>
