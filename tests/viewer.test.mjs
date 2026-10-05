@@ -350,3 +350,26 @@ test("resource level must match both periods", () => {
   assert.equal(core.prior, 100);
   assert.equal(core.children.length, 0);  // resources would show only $40 of the $100 prior
 });
+
+test("flagRows: kind, readable rule name, order, scale", () => {
+  const f = (rule, net, sku = rule) => ({ rule, net, service_id: "S", sku_id: sku, service: "Svc", sku, message: "m " + rule });
+  const r = CT.flagRows([f("nat-processing", 50), f("growth", 300, "big"), f("unused-static-ip", 50, "ip")]);
+  assert.equal(JSON.stringify(r.rows.map((x) => [x.kind, x.ruleLabel, x.net])),
+    JSON.stringify([["growth", "growth", 300], ["rule", "nat processing", 50], ["rule", "unused static ip", 50]]));
+  assert.equal(r.max, 300);
+  assert.equal(r.rows[0].title, "Svc · big");
+  assert.equal(CT.flagRows([]).rows.length, 0);
+  assert.equal(CT.FLAG_LEGEND.growth, "Growing fast");
+  assert.equal(CT.FLAG_LEGEND.rule, "Known cost pattern");
+});
+
+test("flagRows: stable ties, SKU count, empty and negative input", () => {
+  const f = (rule, net, sku) => ({ rule, net, service_id: "S", sku_id: sku, service: "Svc", sku, message: "m" });
+  const r = CT.flagRows([f("unused-static-ip", 50, "zz"), f("nat-processing", 50, "aa"), f("growth", 50, "zz"), f("snapshot-storage", -5, "neg")]);
+  assert.equal(r.rows.map((x) => x.sku_id).join(), "zz,aa,zz,neg");  // ties keep input order, not alphabetical
+  assert.equal(r.skuCount, 3);  // "zz" has two flags
+  assert.equal(r.max, 50);
+  const e = CT.flagRows(undefined);
+  assert.equal(e.rows.length + e.skuCount + e.max, 0);
+  assert.equal(CT.flagRows([f("snapshot-storage", -5, "neg")]).max, 0);
+});
